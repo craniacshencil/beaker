@@ -41,6 +41,32 @@ func ArrLastIndex(arr []byte, subarr []byte) int {
 	return -1
 }
 
+/*
+Takes an arr and subarr and returns indcies for
+all occurences of the first element of subarr.
+  - special case ignored: if subarr is {10, 10} arr is {10, 10, 10, 10}
+    indices returned would be {0, 2}
+  - as illustrated above it doesn't return interleaved
+    subarr, index jumps to the end of the subarr
+*/
+func ArrAllIndex(arr []byte, subarr []byte) []int {
+	startIndex := 0
+	lastIndex := len(arr)
+	appearances := []int{}
+	for startIndex < lastIndex {
+		foundAt := ArrIndex(arr[startIndex:], subarr)
+		if foundAt != -1 {
+			// Gives absolute indexing instead of relative indexing
+			absoluteIndex := foundAt + startIndex
+			appearances = append(appearances, absoluteIndex)
+			startIndex = absoluteIndex + len(subarr)
+		} else {
+			break
+		}
+	}
+	return appearances
+}
+
 func tests() {
 	fmt.Println(
 		ArrIndex(
