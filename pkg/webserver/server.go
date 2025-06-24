@@ -4,14 +4,16 @@ import (
 	"errors"
 	"log"
 	"net"
+	"slices"
 
 	"github.com/craniacshencil/beaker/pkg/router"
 	"github.com/craniacshencil/beaker/utils"
 )
 
 type HttpServer struct {
-	server  *net.TCPListener
-	address net.TCPAddr
+	server    *net.TCPListener
+	address   net.TCPAddr
+	Webrouter *router.Router
 }
 
 func CreateServer(host string, port int) *HttpServer {
@@ -23,9 +25,12 @@ func CreateServer(host string, port int) *HttpServer {
 	if err != nil {
 		log.Println("While creating server: ", err)
 	}
+
+	webrouter := router.CreateRouter()
 	httpServer := HttpServer{
-		server:  server,
-		address: address,
+		server:    server,
+		address:   address,
+		Webrouter: webrouter,
 	}
 	return &httpServer
 }
@@ -46,11 +51,11 @@ func (httpServer *HttpServer) Listen() {
 		if err != nil {
 			log.Println("While reading: ", err)
 		}
-		path, method, headers, err := parseFirstLineAndHeader(data)
+		path, method, headers, body, err := parseRequest(data)
 		if err != nil {
 			log.Println("While parsing first line and headers: ", err)
 		}
-		res, err := router.ServiceRequest(path, method, headers)
+		res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
 		if err != nil {
 			log.Println("While servicing request: ", err)
 		}
@@ -58,29 +63,37 @@ func (httpServer *HttpServer) Listen() {
 	}
 }
 
-func parseFirstLineAndHeader(
+func parseRequest(
 	requestStream []byte,
-) (path []byte, method []byte, headers map[string]string, err error) {
+) (path []byte, method []byte, headers []byte, body []byte, err error) {
 	CRLF_BYTES := []byte("\r\n")
-	headersIndex := utils.ArrLastIndex(requestStream, CRLF_BYTES)
-	firstLineIndex := utils.ArrIndex(requestStream, CRLF_BYTES)
-	if headersIndex == -1 {
-		return nil, nil, nil, errors.New("CRLF not present for header")
+	headersStartIndex := utils.ArrIndex(requestStream, CRLF_BYTES)
+	if headersStartIndex == -1 {
+		return nil, nil, nil, nil, errors.New("CRLF not present for header start")
 	}
-	if firstLineIndex == -1 {
-		return nil, nil, nil, errors.New("CRLF not present for first line")
-	}
-	headerBytes := []byte(requestStream)[firstLineIndex+2 : headersIndex]
-	request := []byte(requestStream)[:firstLineIndex]
+	request := []byte(requestStream)[:headersStartIndex]
 	path, method, err = parseRequestLine(request)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	headers, err = parseHeaders(headerBytes)
+
+	DOUBLE_CRLF_BYTES := []byte("\r\n\r\n")
+	if slices.Equal(method, []byte("GET")) || slices.Equal(method, []byte("DELETE")) {
+		headers = requestStream[headersStartIndex+2:]
+		body = nil
+	} else {
+		headersEndIndex := utils.ArrIndex(requestStream, DOUBLE_CRLF_BYTES)
+		if headersEndIndex == -1 {
+			return nil, nil, nil, nil, errors.New("CRLF not present for headers end")
+		}
+		headers = requestStream[headersStartIndex+2 : headersEndIndex]
+		body = requestStream[headersEndIndex+4:]
+	}
+	_, err = parseAndValidateHeaders(headers)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return path, method, headers, nil
+	return path, method, headers, body, nil
 }
 
 func parseRequestLine(requestLine []byte) (path, method []byte, err error) {
@@ -104,4 +117,24 @@ func parseRequestLine(requestLine []byte) (path, method []byte, err error) {
 		return nil, nil, err
 	}
 	return path, method, nil
+}
+
+func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, err error) {
+	headersMap = make(map[string]string)
+	CRLF_occurences := utils.ArrAllIndex(headerBytes, []byte("\r\n"))
+	startIndex := 0
+	for _, endIndex := range CRLF_occurences {
+		currentLine := headerBytes[startIndex:endIndex]
+		keyValSeparator := utils.ArrIndex(currentLine, []byte(":"))
+		if keyValSeparator == -1 {
+			return nil, errors.New("Invalid header key-value pair, no colon found")
+		}
+		key := currentLine[:keyValSeparator]
+		// +2 to get rid of ": ", colon and whitespace
+		value := currentLine[keyValSeparator+2:]
+		headersMap[string(key)] = string(value)
+		// To skip the \r\n
+		startIndex = endIndex + 2
+	}
+	return headersMap, nil
 }

@@ -91,23 +91,3 @@ func validateMethod(method []byte) (err error) {
 	}
 	return errors.New("Invalid HTTP method")
 }
-
-func parseHeaders(headerBytes []byte) (headers map[string]string, err error) {
-	headers = make(map[string]string)
-	CRLF_occurences := utils.ArrAllIndex(headerBytes, []byte("\r\n"))
-	startIndex := 0
-	for _, endIndex := range CRLF_occurences {
-		currentLine := headerBytes[startIndex:endIndex]
-		keyValSeparator := utils.ArrIndex(currentLine, []byte(":"))
-		if keyValSeparator == -1 {
-			return nil, errors.New("Invalid header key-value pair, no colon found")
-		}
-		key := currentLine[:keyValSeparator]
-		// +2 to get rid of ": ", colon and whitespace
-		value := currentLine[keyValSeparator+2:]
-		headers[string(key)] = string(value)
-		// To skip the \r\n
-		startIndex = endIndex + 2
-	}
-	return headers, nil
-}
