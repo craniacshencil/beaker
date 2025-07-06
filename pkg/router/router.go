@@ -3,8 +3,11 @@ package router
 import (
 	"errors"
 	"fmt"
-	"log"
+	"os"
+	"slices"
 	"strconv"
+
+	"github.com/craniacshencil/beaker/utils"
 )
 
 type (
@@ -35,27 +38,69 @@ func (router *Router) ServiceRequest(
 	body,
 	headers []byte,
 ) (res []byte, err error) {
-	pathString := string(path)
-	methodString := string(method)
-	routerKey := fmt.Sprintf("%s-%s", pathString, methodString)
-	if _, ok := router.mappings[routerKey]; !ok {
-		return nil, errors.New("No path-method mapping present in router")
+	var response Response
+	if len(path) > 6 && (slices.Equal(path[len(path)-5:], []byte(".jpeg")) ||
+		slices.Equal(path[len(path)-4:], []byte(".jpg")) ||
+		slices.Equal(path[len(path)-4:], []byte(".png")) ||
+		slices.Equal(path[len(path)-4:], []byte(".gif"))) {
+		response = serveImage(path)
+	} else {
+		pathString := string(path)
+		methodString := string(method)
+		routerKey := fmt.Sprintf("%s-%s", pathString, methodString)
+		if _, ok := router.mappings[routerKey]; !ok {
+			response = Response{
+				StatusCode: 404,
+				StatusText: "NOT FOUND",
+				Headers:    make(map[string]string),
+				Body:       []byte("Path not found"),
+			}
+			response.Headers["Content-type"] = "text/html"
+		} else {
+			request := Request{
+				path:    pathString,
+				method:  methodString,
+				headers: headers,
+				body:    body,
+			}
+			routeHandler := router.mappings[routerKey]
+			response = routeHandler(&request)
+		}
 	}
-	request := Request{
-		path:    pathString,
-		method:  methodString,
-		headers: headers,
-		body:    body,
-	}
-	routeHandler := router.mappings[routerKey]
-	log.Println(router.mappings)
-	response := routeHandler(&request)
+
 	res, err = formatResponse(&response)
 	if err != nil {
 		return nil, errors.New("Something went wrong while formatting the request")
 	}
-	log.Println("response sent?")
 	return res, nil
+}
+
+func serveImage(path []byte) (response Response) {
+	image, err := os.ReadFile("public/" + string(path))
+	if err != nil {
+		response = Response{
+			StatusCode: 404,
+			StatusText: "NOT FOUND",
+			Headers:    make(map[string]string),
+			Body:       []byte("Image not found"),
+		}
+		response.Headers["Content-type"] = "text/html"
+		return response
+	}
+	response = Response{
+		StatusCode: 200,
+		StatusText: "OK",
+		Headers:    make(map[string]string),
+		Body:       image,
+	}
+	if utils.ArrIndex(path, []byte(".jpeg")) != -1 || utils.ArrIndex(path, []byte(".jpg")) != -1 {
+		response.Headers["Content-type"] = "image/jpeg"
+	} else if utils.ArrIndex(path, []byte(".png")) != -1 {
+		response.Headers["Content-type"] = "image/png"
+	} else {
+		response.Headers["Content-type"] = "image/gif"
+	}
+	return response
 }
 
 func formatResponse(response *Response) (res []byte, err error) {

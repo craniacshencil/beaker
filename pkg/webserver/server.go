@@ -124,6 +124,9 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 	CRLF_occurences := utils.ArrAllIndex(headerBytes, []byte("\r\n"))
 	startIndex := 0
 	for _, endIndex := range CRLF_occurences {
+		if startIndex == endIndex {
+			break
+		}
 		currentLine := headerBytes[startIndex:endIndex]
 		keyValSeparator := utils.ArrIndex(currentLine, []byte(":"))
 		if keyValSeparator == -1 {
