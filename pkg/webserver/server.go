@@ -36,7 +36,6 @@ func CreateServer(host string, port int) *HttpServer {
 }
 
 func (httpServer *HttpServer) Listen() {
-	data := make([]byte, 1024)
 	log.Printf(
 		"Server up and running on %s:%d\n",
 		httpServer.address.IP,
@@ -46,20 +45,26 @@ func (httpServer *HttpServer) Listen() {
 		conn, err := httpServer.server.Accept()
 		if err != nil {
 			log.Println("While listening: ", err)
+			continue
 		}
-		_, err = conn.Read(data)
-		if err != nil {
-			log.Println("While reading: ", err)
-		}
-		path, method, headers, body, err := parseRequest(data)
-		if err != nil {
-			log.Println("While parsing first line and headers: ", err)
-		}
-		res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
-		if err != nil {
-			log.Println("While servicing request: ", err)
-		}
-		conn.Write(res)
+		go func(conn net.Conn) {
+			log.Println("New connection: ", conn.RemoteAddr())
+			data := make([]byte, 1024)
+			defer conn.Close()
+			_, err = conn.Read(data)
+			if err != nil {
+				log.Println("While reading: ", err)
+			}
+			path, method, headers, body, err := parseRequest(data)
+			if err != nil {
+				log.Println("While parsing first line and headers: ", err)
+			}
+			res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
+			if err != nil {
+				log.Println("While servicing request: ", err)
+			}
+			conn.Write(res)
+		}(conn)
 	}
 }
 
