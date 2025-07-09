@@ -10,13 +10,18 @@ import (
 	"github.com/craniacshencil/beaker/utils"
 )
 
+type Job struct {
+	conn net.Conn
+}
+
 type HttpServer struct {
 	server    *net.TCPListener
 	address   net.TCPAddr
 	Webrouter *router.Router
+	JobQueue  chan Job
 }
 
-func CreateServer(host string, port int) *HttpServer {
+func CreateServer(host string, port int, workers int) *HttpServer {
 	address := net.TCPAddr{
 		IP:   net.ParseIP(host),
 		Port: port,
@@ -31,8 +36,39 @@ func CreateServer(host string, port int) *HttpServer {
 		server:    server,
 		address:   address,
 		Webrouter: webrouter,
+		JobQueue:  make(chan Job, 100),
+	}
+
+	for i := 0; i < workers; i++ {
+		go httpServer.worker(i)
 	}
 	return &httpServer
+}
+
+func (httpServer *HttpServer) worker(id int) {
+	for job := range httpServer.JobQueue {
+		conn := job.conn
+		httpServer.handleConnection(conn, id)
+	}
+}
+
+func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
+	log.Printf("New connection: %v handled by %d", conn.RemoteAddr(), workerId)
+	data := make([]byte, 1024)
+	defer conn.Close()
+	_, err := conn.Read(data)
+	if err != nil {
+		log.Println("While reading: ", err)
+	}
+	path, method, headers, body, err := parseRequest(data)
+	if err != nil {
+		log.Println("While parsing first line and headers: ", err)
+	}
+	res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
+	if err != nil {
+		log.Println("While servicing request: ", err)
+	}
+	conn.Write(res)
 }
 
 func (httpServer *HttpServer) Listen() {
@@ -47,24 +83,7 @@ func (httpServer *HttpServer) Listen() {
 			log.Println("While listening: ", err)
 			continue
 		}
-		go func(conn net.Conn) {
-			log.Println("New connection: ", conn.RemoteAddr())
-			data := make([]byte, 1024)
-			defer conn.Close()
-			_, err = conn.Read(data)
-			if err != nil {
-				log.Println("While reading: ", err)
-			}
-			path, method, headers, body, err := parseRequest(data)
-			if err != nil {
-				log.Println("While parsing first line and headers: ", err)
-			}
-			res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
-			if err != nil {
-				log.Println("While servicing request: ", err)
-			}
-			conn.Write(res)
-		}(conn)
+		httpServer.JobQueue <- Job{conn: conn}
 	}
 }
 
