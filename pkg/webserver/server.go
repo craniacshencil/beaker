@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"slices"
+	"sync"
 
 	"github.com/craniacshencil/beaker/pkg/router"
 	"github.com/craniacshencil/beaker/utils"
@@ -19,6 +20,7 @@ type HttpServer struct {
 	address   net.TCPAddr
 	Webrouter *router.Router
 	JobQueue  chan Job
+	BufPool   *sync.Pool
 }
 
 func CreateServer(host string, port int, workers int) *HttpServer {
@@ -37,6 +39,11 @@ func CreateServer(host string, port int, workers int) *HttpServer {
 		address:   address,
 		Webrouter: webrouter,
 		JobQueue:  make(chan Job, 100),
+		BufPool: &sync.Pool{
+			New: func() any {
+				return make([]byte, 1024)
+			},
+		},
 	}
 
 	for i := 0; i < workers; i++ {
@@ -54,16 +61,22 @@ func (httpServer *HttpServer) worker(id int) {
 
 func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	log.Printf("New connection: %v handled by %d", conn.RemoteAddr(), workerId)
-	data := make([]byte, 1024)
+
+	buf := httpServer.BufPool.Get().([]byte)
+	defer httpServer.BufPool.Put(buf)
 	defer conn.Close()
-	_, err := conn.Read(data)
+
+	n, err := conn.Read(buf)
 	if err != nil {
 		log.Println("While reading: ", err)
 	}
+
+	data := buf[:n]
 	path, method, headers, body, err := parseRequest(data)
 	if err != nil {
 		log.Println("While parsing first line and headers: ", err)
 	}
+
 	res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
 	if err != nil {
 		log.Println("While servicing request: ", err)
