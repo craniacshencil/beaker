@@ -41,7 +41,7 @@ func CreateServer(host string, port int, workers int) *HttpServer {
 		JobQueue:  make(chan Job, 100),
 		BufPool: &sync.Pool{
 			New: func() any {
-				return make([]byte, 1024)
+				return make([]byte, 2048)
 			},
 		},
 	}
@@ -103,6 +103,7 @@ func (httpServer *HttpServer) Listen() {
 func parseRequest(
 	requestStream []byte,
 ) (path []byte, method []byte, headers []byte, body []byte, err error) {
+	// start := time.Now()
 	CRLF_BYTES := []byte("\r\n")
 	headersStartIndex := utils.ArrIndex(requestStream, CRLF_BYTES)
 	if headersStartIndex == -1 {
@@ -113,6 +114,7 @@ func parseRequest(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// log.Println("Time taken to parse request: ", time.Since(start))
 
 	DOUBLE_CRLF_BYTES := []byte("\r\n\r\n")
 	if slices.Equal(method, []byte("GET")) || slices.Equal(method, []byte("DELETE")) {
@@ -125,11 +127,21 @@ func parseRequest(
 		}
 		headers = requestStream[headersStartIndex+2 : headersEndIndex]
 		body = requestStream[headersEndIndex+4:]
+		log.Println("body: ", body)
 	}
-	_, err = parseAndValidateHeaders(headers)
+	headersMap, err := parseAndValidateHeaders(headers)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
+	if body != nil {
+		log.Println("content-type: ", headersMap["Content-Type"])
+		err := validateBody([]byte(headersMap["Content-Type"]), body)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
+	// log.Printf("For path: %s, time taken to parse headers: %v", path, time.Since(start))
 	return path, method, headers, body, nil
 }
 
@@ -177,4 +189,20 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 		startIndex = endIndex + 2
 	}
 	return headersMap, nil
+}
+
+func validateBody(contentType, body []byte) (err error) {
+	if slices.Equal(contentType, []byte("text/plain")) {
+		err = validatePlainTextBody(body)
+	}
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePlainTextBody(body []byte) (err error) {
+	log.Println("body-bytes: ", len(body))
+	return
 }
