@@ -5,10 +5,15 @@ import (
 	"log"
 	"net"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/craniacshencil/beaker/pkg/router"
 	"github.com/craniacshencil/beaker/utils"
+)
+
+const (
+	MAX_REQUEST_SIZE = 10240
 )
 
 type Job struct {
@@ -41,7 +46,7 @@ func CreateServer(host string, port int, workers int) *HttpServer {
 		JobQueue:  make(chan Job, 100),
 		BufPool: &sync.Pool{
 			New: func() any {
-				return make([]byte, 2048)
+				return make([]byte, MAX_REQUEST_SIZE)
 			},
 		},
 	}
@@ -134,9 +139,18 @@ func parseRequest(
 		return nil, nil, nil, nil, err
 	}
 
-	if body != nil {
+	contentLengthString, ok := headersMap["Content-Length"]
+	if body != nil && ok {
 		log.Println("content-type: ", headersMap["Content-Type"])
-		err := validateBody([]byte(headersMap["Content-Type"]), body)
+		// Incase of empty body
+		contentLength, err := strconv.Atoi(contentLengthString)
+		if err != nil {
+			return nil, nil, nil, nil, errors.New("Invalid content-length")
+		}
+		if contentLength > MAX_REQUEST_SIZE {
+			return nil, nil, nil, nil, errors.New("Request body size exceeded max limit")
+		}
+		err = validateBody([]byte(headersMap["Content-Type"]), body)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -192,17 +206,8 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 }
 
 func validateBody(contentType, body []byte) (err error) {
-	if slices.Equal(contentType, []byte("text/plain")) {
-		err = validatePlainTextBody(body)
-	}
-
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-func validatePlainTextBody(body []byte) (err error) {
-	log.Println("body-bytes: ", len(body))
-	return
 }
