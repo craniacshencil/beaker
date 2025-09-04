@@ -2,6 +2,7 @@ package webserver
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -90,4 +91,14 @@ func validateMethod(method []byte) (err error) {
 		}
 	}
 	return errors.New("Invalid HTTP method")
+}
+
+func validateBody(contentType, body []byte) (err error) {
+	if slices.Equal(contentType, []byte("application/json")) {
+		var temp struct{}
+		if err = json.Unmarshal(body, &temp); err != nil {
+			return err
+		}
+	}
+	return nil
 }

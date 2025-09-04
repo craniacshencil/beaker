@@ -204,10 +204,3 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 	}
 	return headersMap, nil
 }
-
-func validateBody(contentType, body []byte) (err error) {
-	if err != nil {
-		return err
-	}
-	return nil
-}
