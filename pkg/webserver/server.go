@@ -132,7 +132,6 @@ func parseRequest(
 		}
 		headers = requestStream[headersStartIndex+2 : headersEndIndex]
 		body = requestStream[headersEndIndex+4:]
-		log.Println("body: ", body)
 	}
 	headersMap, err := parseAndValidateHeaders(headers)
 	if err != nil {
@@ -141,7 +140,6 @@ func parseRequest(
 
 	contentLengthString, ok := headersMap["Content-Length"]
 	if body != nil && ok {
-		log.Println("content-type: ", headersMap["Content-Type"])
 		// Incase of empty body
 		contentLength, err := strconv.Atoi(contentLengthString)
 		if err != nil {
@@ -164,21 +162,29 @@ func parseRequestLine(requestLine []byte) (path, method []byte, err error) {
 	WHITESPACE_BYTE := []byte(" ")
 	firstWhitespace := utils.ArrIndex(requestLine, WHITESPACE_BYTE)
 	secondWhitespace := utils.ArrLastIndex(requestLine, WHITESPACE_BYTE)
+	if firstWhitespace == secondWhitespace {
+		return nil, nil, errors.New("Request line not formed correctly")
+	}
+
 	method = requestLine[:firstWhitespace]
 	path = requestLine[firstWhitespace+1 : secondWhitespace]
 	httpVersion := requestLine[secondWhitespace+1:]
+
 	err = validateHttpVersion(httpVersion)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	err = validatePath(path)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	err = validateMethod(method)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return path, method, nil
 }
 
@@ -191,15 +197,10 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 			break
 		}
 		currentLine := headerBytes[startIndex:endIndex]
-		keyValSeparator := utils.ArrIndex(currentLine, []byte(":"))
-		if keyValSeparator == -1 {
-			return nil, errors.New("Invalid header key-value pair, no colon found")
+		err = utils.Mapify(headersMap, currentLine, []byte(": "))
+		if err != nil {
+			return nil, err
 		}
-		key := currentLine[:keyValSeparator]
-		// +2 to get rid of ": ", colon and whitespace
-		value := currentLine[keyValSeparator+2:]
-		headersMap[string(key)] = string(value)
-		// To skip the \r\n
 		startIndex = endIndex + 2
 	}
 	return headersMap, nil

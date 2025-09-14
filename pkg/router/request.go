@@ -20,12 +20,8 @@ func (request *Request) GetHeaders() (headersMap map[string]string) {
 	startIndex := 0
 	for _, endIndex := range CRLF_occurences {
 		currentLine := request.headers[startIndex:endIndex]
-		keyValSeparator := utils.ArrIndex(currentLine, []byte(":"))
-		key := currentLine[:keyValSeparator]
-		// +2 to get rid of ": ", colon and whitespace
-		value := currentLine[keyValSeparator+2:]
-		headersMap[string(key)] = string(value)
-		// To skip the \r\n
+		// No error handling here because it has been validated
+		utils.Mapify(headersMap, currentLine, []byte(": "))
 		startIndex = endIndex + 2
 	}
 	return headersMap
@@ -42,3 +38,4 @@ func (request *Request) GetHeaderValue(key string) (value string, err error) {
 }
 
 // body parsing, especially for application/json POST request and stuff
+// application/json and application/x-www-form-urlencoded: Takes in strictly typed format and gives validated output or error
