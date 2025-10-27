@@ -1,7 +1,6 @@
 package webserver
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,22 +49,9 @@ func validatePath(path []byte) (err error) {
 	}
 
 	// Hex encoder util make using this snippet
-	percentageIndices := utils.ArrAllIndex(path, []byte("%"))
-	temp := make([]byte, 1)
-	for i := 0; i < len(percentageIndices); i++ {
-		startIndex := percentageIndices[i]
-		if startIndex+3 > len(path) {
-			return errors.New("Invalid percentage encoded characters")
-		}
-		_, err = hex.Decode(temp, path[startIndex+1:startIndex+3])
-		if err != nil {
-			return errors.New(
-				fmt.Sprintf(
-					"Invalid percentage encoded characters: %s",
-					path[startIndex+1:startIndex+3],
-				),
-			)
-		}
+	_, err = utils.PercentDecode(path)
+	if err != nil {
+		return err
 	}
 
 	if utils.ArrIndex(path, []byte("..")) != -1 {
@@ -110,6 +96,7 @@ func validateBody(contentType, body []byte) (err error) {
 	// logic
 	case slices.Equal(contentType, []byte("multipart/form-data")):
 	// logic
+	case slices.Equal(contentType, []byte("text/plain")):
 	default:
 		return errors.New("Toy server: unsupported body type")
 	}

@@ -114,8 +114,8 @@ func parseRequest(
 	if headersStartIndex == -1 {
 		return nil, nil, nil, nil, errors.New("CRLF not present for header start")
 	}
-	request := []byte(requestStream)[:headersStartIndex]
-	path, method, err = parseRequestLine(request)
+	requestLine := requestStream[:headersStartIndex]
+	path, method, err = parseRequestLine(requestLine)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
