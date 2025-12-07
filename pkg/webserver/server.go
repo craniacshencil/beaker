@@ -7,8 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
-	"slices"
-	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/craniacshencil/beaker/pkg/router"
@@ -29,6 +28,22 @@ type HttpServer struct {
 	Webrouter *router.Router
 	JobQueue  chan Job
 	BufPool   *sync.Pool
+}
+
+func (httpServer *HttpServer) Listen() {
+	log.Printf(
+		"Server up and running on %s:%d\n",
+		httpServer.address.IP,
+		httpServer.address.Port,
+	)
+	for {
+		conn, err := httpServer.server.Accept()
+		if err != nil {
+			log.Println("While listening: ", err)
+			continue
+		}
+		httpServer.JobQueue <- Job{conn: conn}
+	}
 }
 
 func CreateServer(host string, port int, workers int) *HttpServer {
@@ -70,11 +85,23 @@ func (httpServer *HttpServer) worker(id int) {
 func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	log.Printf("New connection: %v handled by %d", conn.RemoteAddr(), workerId)
 
-	headerBuf := httpServer.BufPool.Get().([]byte)
-	defer httpServer.BufPool.Put(headerBuf)
+	headersBytes := httpServer.BufPool.Get().([]byte)
+	defer httpServer.BufPool.Put(headersBytes)
 	defer conn.Close()
 
-	headerBuf, _, err := readHeaders(conn)
+	headersBytes, _, err := readHeaders(conn)
+	if err != nil {
+		log.Println("While reading headers: ", err)
+		return
+	}
+
+	path, method, headers, err := parseHeaders(headersBytes)
+	if err != nil {
+		log.Println("While parsing headers: ", err)
+		return
+	}
+	log.Println(path, method, headers)
+
 	return
 
 	// n, err := conn.Read(buf)
@@ -95,30 +122,14 @@ func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	// conn.Write(res)
 }
 
-func (httpServer *HttpServer) Listen() {
-	log.Printf(
-		"Server up and running on %s:%d\n",
-		httpServer.address.IP,
-		httpServer.address.Port,
-	)
-	for {
-		conn, err := httpServer.server.Accept()
-		if err != nil {
-			log.Println("While listening: ", err)
-			continue
-		}
-		httpServer.JobQueue <- Job{conn: conn}
-	}
-}
-
-func readHeaders(conn net.Conn) (headerBytes []byte, bodyReader io.Reader, err error) {
+func readHeaders(conn net.Conn) (headersBytes []byte, bodyReader io.Reader, err error) {
 	br := bufio.NewReader(conn)
-	var headerBuf bytes.Buffer
+	var headersBuf bytes.Buffer
 
 	for {
 		line, readErr := br.ReadString('\n')
 		if len(line) > 0 {
-			_, _ = headerBuf.WriteString(line)
+			_, _ = headersBuf.WriteString(line)
 		}
 		if readErr != nil && readErr != io.EOF {
 			return nil, nil, readErr
@@ -133,96 +144,85 @@ func readHeaders(conn net.Conn) (headerBytes []byte, bodyReader io.Reader, err e
 		}
 	}
 
-	headerBytes = headerBuf.Bytes()
+	headersBytes = headersBuf.Bytes()
 	bodyReader = br
-	return headerBytes, bodyReader, nil
+	return headersBytes, bodyReader, nil
 }
 
-func parseRequest(
-	requestStream []byte,
-) (path []byte, method []byte, headers []byte, body []byte, err error) {
-	// start := time.Now()
+func parseHeaders(
+	headersBytes []byte,
+) (path, method string, headers map[string]string, err error) {
+	var headersOnly []byte
 	CRLF_BYTES := []byte("\r\n")
-	headersStartIndex := utils.ArrIndex(requestStream, CRLF_BYTES)
+	headersStartIndex := utils.ArrIndex(headersBytes, CRLF_BYTES)
 	if headersStartIndex == -1 {
-		return nil, nil, nil, nil, errors.New("CRLF not present for header start")
+		return "", "", nil, errors.New("No CRLF present in headers")
 	}
-	requestLine := requestStream[:headersStartIndex]
+	requestLine := string(headersBytes[:headersStartIndex])
 	path, method, err = parseRequestLine(requestLine)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", "", nil, err
 	}
-	// log.Println("Time taken to parse request: ", time.Since(start))
 
-	DOUBLE_CRLF_BYTES := []byte("\r\n\r\n")
-	if slices.Equal(method, []byte("GET")) || slices.Equal(method, []byte("DELETE")) {
-		headers = requestStream[headersStartIndex+2:]
-		body = nil
-	} else {
-		headersEndIndex := utils.ArrIndex(requestStream, DOUBLE_CRLF_BYTES)
-		if headersEndIndex == -1 {
-			return nil, nil, nil, nil, errors.New("CRLF not present for headers end")
-		}
-		headers = requestStream[headersStartIndex+2 : headersEndIndex]
-		body = requestStream[headersEndIndex+4:]
-	}
-	headersMap, err := parseAndValidateHeaders(headers)
+	headersOnly = headersBytes[headersStartIndex+2:]
+	// headersOnly = headersBytes[headersStartIndex+2 : headersEndIndex]
+	headers, err = parseAndValidateHeaders(headersOnly)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", "", nil, err
 	}
 
-	contentLengthString, ok := headersMap["Content-Length"]
-	if body != nil && ok {
-		// Incase of empty body
-		contentLength, err := strconv.Atoi(contentLengthString)
-		if err != nil {
-			return nil, nil, nil, nil, errors.New("Invalid content-length")
-		}
-		if contentLength > MAX_REQUEST_SIZE {
-			return nil, nil, nil, nil, errors.New("Request body size exceeded max limit")
-		}
-		err = validateBody([]byte(headersMap["Content-Type"]), body)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-	}
-	// log.Printf("For path: %s, time taken to parse headers: %v", path, time.Since(start))
-	return path, method, headers, body, nil
+	return path, method, headers, nil
 }
 
-func parseRequestLine(requestLine []byte) (path, method []byte, err error) {
+func parseBody() {
+	// if body != nil && ok {
+	// 	// Incase of empty body
+	// 	contentLength, err := strconv.Atoi(contentLengthString)
+	// 	if err != nil {
+	// 		return nil, nil, nil, nil, errors.New("Invalid content-length")
+	// 	}
+	// 	if contentLength > MAX_REQUEST_SIZE {
+	// 		return nil, nil, nil, nil, errors.New("Request body size exceeded max limit")
+	// 	}
+	// 	err = validateBody([]byte(headersMap["Content-Type"]), body)
+	// 	if err != nil {
+	// 		return nil, nil, nil, nil, err
+	// 	}
+	// }
+}
+
+func parseRequestLine(requestLine string) (path, method string, err error) {
 	// request-line format: http-method path HTTP/version_no
-	WHITESPACE_BYTE := []byte(" ")
-	firstWhitespace := utils.ArrIndex(requestLine, WHITESPACE_BYTE)
-	secondWhitespace := utils.ArrLastIndex(requestLine, WHITESPACE_BYTE)
-	if firstWhitespace == secondWhitespace {
-		return nil, nil, errors.New("Request line not formed correctly")
+	requestLineSplit := strings.Split(requestLine, " ")
+
+	if len(requestLineSplit) != 3 {
+		return "", "", errors.New("Request line not formed correctly")
 	}
 
-	method = requestLine[:firstWhitespace]
-	path = requestLine[firstWhitespace+1 : secondWhitespace]
-	httpVersion := requestLine[secondWhitespace+1:]
+	method = requestLineSplit[0]
+	path = requestLineSplit[1]
+	httpVersion := requestLineSplit[2]
 
-	err = validateHttpVersion(httpVersion)
+	err = validateHttpVersion([]byte(httpVersion))
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
-	err = validatePath(path)
+	err = validatePath([]byte(path))
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
-	err = validateMethod(method)
+	err = validateMethod([]byte(method))
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
 	return path, method, nil
 }
 
-func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, err error) {
-	headersMap = make(map[string]string)
+func parseAndValidateHeaders(headerBytes []byte) (headers map[string]string, err error) {
+	headers = make(map[string]string)
 	CRLF_occurences := utils.ArrAllIndex(headerBytes, []byte("\r\n"))
 	startIndex := 0
 	for _, endIndex := range CRLF_occurences {
@@ -230,11 +230,11 @@ func parseAndValidateHeaders(headerBytes []byte) (headersMap map[string]string, 
 			break
 		}
 		currentLine := headerBytes[startIndex:endIndex]
-		err = utils.Mapify(headersMap, currentLine, []byte(": "))
+		err = utils.Mapify(headers, currentLine, []byte(": "))
 		if err != nil {
 			return nil, err
 		}
 		startIndex = endIndex + 2
 	}
-	return headersMap, nil
+	return headers, nil
 }
