@@ -1,7 +1,10 @@
 package webserver
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"slices"
@@ -67,26 +70,29 @@ func (httpServer *HttpServer) worker(id int) {
 func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	log.Printf("New connection: %v handled by %d", conn.RemoteAddr(), workerId)
 
-	buf := httpServer.BufPool.Get().([]byte)
-	defer httpServer.BufPool.Put(buf)
+	headerBuf := httpServer.BufPool.Get().([]byte)
+	defer httpServer.BufPool.Put(headerBuf)
 	defer conn.Close()
 
-	n, err := conn.Read(buf)
-	if err != nil {
-		log.Println("While reading: ", err)
-	}
+	headerBuf, _, err := readHeaders(conn)
+	return
 
-	data := buf[:n]
-	path, method, headers, body, err := parseRequest(data)
-	if err != nil {
-		log.Println("While parsing first line and headers: ", err)
-	}
-
-	res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
-	if err != nil {
-		log.Println("While servicing request: ", err)
-	}
-	conn.Write(res)
+	// n, err := conn.Read(buf)
+	// if err != nil {
+	// 	log.Println("While reading: ", err)
+	// }
+	//
+	// data := buf[:n]
+	// path, method, headers, body, err := parseRequest(data)
+	// if err != nil {
+	// 	log.Println("While parsing first line and headers: ", err)
+	// }
+	//
+	// res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
+	// if err != nil {
+	// 	log.Println("While servicing request: ", err)
+	// }
+	// conn.Write(res)
 }
 
 func (httpServer *HttpServer) Listen() {
@@ -103,6 +109,33 @@ func (httpServer *HttpServer) Listen() {
 		}
 		httpServer.JobQueue <- Job{conn: conn}
 	}
+}
+
+func readHeaders(conn net.Conn) (headerBytes []byte, bodyReader io.Reader, err error) {
+	br := bufio.NewReader(conn)
+	var headerBuf bytes.Buffer
+
+	for {
+		line, readErr := br.ReadString('\n')
+		if len(line) > 0 {
+			_, _ = headerBuf.WriteString(line)
+		}
+		if readErr != nil && readErr != io.EOF {
+			return nil, nil, readErr
+		}
+
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+
+		if readErr == io.EOF {
+			break
+		}
+	}
+
+	headerBytes = headerBuf.Bytes()
+	bodyReader = br
+	return headerBytes, bodyReader, nil
 }
 
 func parseRequest(
