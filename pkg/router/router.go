@@ -3,9 +3,10 @@ package router
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/craniacshencil/beaker/utils"
 )
@@ -34,20 +35,19 @@ func (router *Router) Register(method, path string, handler HandlerFunc) {
 
 func (router *Router) ServiceRequest(
 	path,
-	method,
-	body,
-	headers []byte,
+	method string,
+	headers map[string]string,
+	body io.Reader,
 ) (res []byte, err error) {
 	var response Response
-	if len(path) > 6 && (slices.Equal(path[len(path)-5:], []byte(".jpeg")) ||
-		slices.Equal(path[len(path)-4:], []byte(".jpg")) ||
-		slices.Equal(path[len(path)-4:], []byte(".png")) ||
-		slices.Equal(path[len(path)-4:], []byte(".gif"))) {
-		response = serveImage(path)
+	var bodyBytes []byte
+
+	if strings.Contains(path, ".jpeg") || strings.Contains(path, ".jpg") ||
+		strings.Contains(path, ".png") ||
+		strings.Contains(path, ".gif") {
+		response = serveImage([]byte(path))
 	} else {
-		pathString := string(path)
-		methodString := string(method)
-		routerKey := fmt.Sprintf("%s-%s", pathString, methodString)
+		routerKey := fmt.Sprintf("%s-%s", path, method)
 		if _, ok := router.mappings[routerKey]; !ok {
 			response = Response{
 				StatusCode: 404,
@@ -57,11 +57,15 @@ func (router *Router) ServiceRequest(
 			}
 			response.Headers["Content-type"] = "text/html"
 		} else {
+			_, err := body.Read(bodyBytes)
+			if err != nil {
+				return nil, err
+			}
 			request := Request{
-				path:    pathString,
-				method:  methodString,
-				headers: headers,
-				body:    body,
+				path:    path,
+				method:  method,
+				headers: []byte("PLACEHOLDER VALUE, REFACTOR PENDING"),
+				body:    bodyBytes,
 			}
 			routeHandler := router.mappings[routerKey]
 			response = routeHandler(&request)

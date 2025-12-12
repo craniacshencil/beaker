@@ -89,7 +89,7 @@ func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	defer httpServer.BufPool.Put(headersBytes)
 	defer conn.Close()
 
-	headersBytes, _, err := readHeaders(conn)
+	headersBytes, bodyReader, err := readHeaders(conn)
 	if err != nil {
 		log.Println("While reading headers: ", err)
 		return
@@ -100,26 +100,14 @@ func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 		log.Println("While parsing headers: ", err)
 		return
 	}
-	log.Println(path, method, headers)
+
+	res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, bodyReader)
+	if err != nil {
+		log.Println("While servicing request: ", err)
+	}
+	conn.Write(res)
 
 	return
-
-	// n, err := conn.Read(buf)
-	// if err != nil {
-	// 	log.Println("While reading: ", err)
-	// }
-	//
-	// data := buf[:n]
-	// path, method, headers, body, err := parseRequest(data)
-	// if err != nil {
-	// 	log.Println("While parsing first line and headers: ", err)
-	// }
-	//
-	// res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, body)
-	// if err != nil {
-	// 	log.Println("While servicing request: ", err)
-	// }
-	// conn.Write(res)
 }
 
 func readHeaders(conn net.Conn) (headersBytes []byte, bodyReader io.Reader, err error) {
