@@ -40,7 +40,6 @@ func (router *Router) ServiceRequest(
 	body io.Reader,
 ) (res []byte, err error) {
 	var response Response
-	var bodyBytes []byte
 
 	if strings.Contains(path, ".jpeg") || strings.Contains(path, ".jpg") ||
 		strings.Contains(path, ".png") ||
@@ -57,15 +56,11 @@ func (router *Router) ServiceRequest(
 			}
 			response.Headers["Content-type"] = "text/html"
 		} else {
-			_, err := body.Read(bodyBytes)
-			if err != nil {
-				return nil, err
-			}
 			request := Request{
 				path:    path,
 				method:  method,
-				headers: []byte("PLACEHOLDER VALUE, REFACTOR PENDING"),
-				body:    bodyBytes,
+				headers: headers,
+				body:    body,
 			}
 			routeHandler := router.mappings[routerKey]
 			response = routeHandler(&request)

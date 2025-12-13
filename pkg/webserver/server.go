@@ -162,23 +162,6 @@ func parseHeaders(
 	return path, method, headers, nil
 }
 
-func parseBody() {
-	// if body != nil && ok {
-	// 	// Incase of empty body
-	// 	contentLength, err := strconv.Atoi(contentLengthString)
-	// 	if err != nil {
-	// 		return nil, nil, nil, nil, errors.New("Invalid content-length")
-	// 	}
-	// 	if contentLength > MAX_REQUEST_SIZE {
-	// 		return nil, nil, nil, nil, errors.New("Request body size exceeded max limit")
-	// 	}
-	// 	err = validateBody([]byte(headersMap["Content-Type"]), body)
-	// 	if err != nil {
-	// 		return nil, nil, nil, nil, err
-	// 	}
-	// }
-}
-
 func parseRequestLine(requestLine string) (path, method string, err error) {
 	// request-line format: http-method path HTTP/version_no
 	requestLineSplit := strings.Split(requestLine, " ")

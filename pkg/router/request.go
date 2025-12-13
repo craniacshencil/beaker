@@ -1,41 +1,30 @@
 package router
 
-import (
-	"errors"
-
-	"github.com/craniacshencil/beaker/utils"
-)
+import "io"
 
 type Request struct {
 	path    string
 	method  string
-	headers []byte
-	body    []byte
-}
-
-// Add function to get headers as a map
-func (request *Request) GetHeaders() (headersMap map[string]string) {
-	headersMap = make(map[string]string)
-	CRLF_occurences := utils.ArrAllIndex(request.headers, []byte("\r\n"))
-	startIndex := 0
-	for _, endIndex := range CRLF_occurences {
-		currentLine := request.headers[startIndex:endIndex]
-		// No error handling here because it has been validated
-		utils.Mapify(headersMap, currentLine, []byte(": "))
-		startIndex = endIndex + 2
-	}
-	return headersMap
-}
-
-// Add function to get headers using a key
-func (request *Request) GetHeaderValue(key string) (value string, err error) {
-	headers := request.GetHeaders()
-	val, ok := headers[key]
-	if !ok {
-		return "", errors.New("Invalid header key")
-	}
-	return val, nil
+	headers map[string]string
+	body    io.Reader
 }
 
 // body parsing, especially for application/json POST request and stuff
+func (request *Request) parseBody() {
+	// if body != nil && ok {
+	// 	// Incase of empty body
+	// 	contentLength, err := strconv.Atoi(contentLengthString)
+	// 	if err != nil {
+	// 		return nil, nil, nil, nil, errors.New("Invalid content-length")
+	// 	}
+	// 	if contentLength > MAX_REQUEST_SIZE {
+	// 		return nil, nil, nil, nil, errors.New("Request body size exceeded max limit")
+	// 	}
+	// 	err = validateBody([]byte(headersMap["Content-Type"]), body)
+	// 	if err != nil {
+	// 		return nil, nil, nil, nil, err
+	// 	}
+	// }
+}
+
 // application/json and application/x-www-form-urlencoded: Takes in strictly typed format and gives validated output or error
