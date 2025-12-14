@@ -27,7 +27,6 @@ func main() {
 
 func getenv(key, fallback string) (value string) {
 	if val, ok := os.LookupEnv(key); ok {
-		log.Printf("%s: %s\n", key, val)
 		return val
 	}
 	return fallback

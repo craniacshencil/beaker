@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -17,7 +18,7 @@ import (
 const (
 	// 8 Kb
 	MAX_HEADER_SIZE            = 8192
-	MAX_HEADER_SIZE_EXCEED_ERR = "Header size is over 8kb"
+	MAX_HEADER_SIZE_EXCEED_ERR = "Headers exceed 8kb"
 )
 
 type Job struct {
@@ -93,34 +94,31 @@ func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 
 	headersBytes, bodyReader, err := readHeaders(conn)
 	if err != nil && err.Error() == MAX_HEADER_SIZE_EXCEED_ERR {
-		errRes := router.Response{
-			StatusCode: 413,
-			StatusText: "ENTITY TOO LARGE",
-			Headers:    map[string]string{"Content-Type": "text/html"},
-			Body:       []byte(""),
-		}
-		res := errRes.Serialize()
-		conn.Write(res)
+		handleError(conn, 413, "ENTITY TOO LARGE", MAX_HEADER_SIZE_EXCEED_ERR)
 		return
 	}
 
 	if err != nil {
 		log.Println("While reading headers: ", err)
+		handleError(conn, 400, "BAD REQUEST", "Malformed Headers")
 		return
 	}
 
 	path, method, headers, err := parseHeaders(headersBytes)
 	if err != nil {
 		log.Println("While parsing headers: ", err)
+		handleError(conn, 400, "BAD REQUEST", "Malformed Headers")
 		return
 	}
 
 	res, err := httpServer.Webrouter.ServiceRequest(path, method, headers, bodyReader)
 	if err != nil {
 		log.Println("While servicing request: ", err)
+		handleError(conn, 400, "BAD REQUEST", "Malformed Body")
+		return
 	}
-	conn.Write(res)
 
+	conn.Write(res)
 	return
 }
 
@@ -225,4 +223,15 @@ func parseAndValidateHeaders(headerBytes []byte) (headers map[string]string, err
 		startIndex = endIndex + 2
 	}
 	return headers, nil
+}
+
+func handleError(conn net.Conn, statusCode int, statusText, body string) {
+	errRes := router.Response{
+		StatusCode: statusCode,
+		StatusText: statusText,
+		Headers:    map[string]string{"Content-Type": "text/html"},
+		Body:       []byte(fmt.Sprintf("%d: %s. %s.", statusCode, statusText, body)),
+	}
+	conn.Write(errRes.Serialize())
+	return
 }
