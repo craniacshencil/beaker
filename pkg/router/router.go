@@ -38,31 +38,29 @@ func (router *Router) ServiceRequest(
 	body io.Reader,
 ) (res []byte, err error) {
 	var response Response
+	routerKey := fmt.Sprintf("%s-%s", path, method)
 
 	if strings.Contains(path, ".jpeg") || strings.Contains(path, ".jpg") ||
 		strings.Contains(path, ".png") ||
 		strings.Contains(path, ".gif") {
 		response = serveImage([]byte(path))
+	} else if _, ok := router.mappings[routerKey]; !ok {
+		response = pathNotFound()
 	} else {
-		routerKey := fmt.Sprintf("%s-%s", path, method)
-		if _, ok := router.mappings[routerKey]; !ok {
-			response = Response{
-				StatusCode: 404,
-				StatusText: "NOT FOUND",
-				Headers:    make(map[string]string),
-				Body:       []byte("Path not found"),
-			}
-			response.Headers["Content-type"] = "text/html"
-		} else {
-			request := Request{
-				path:    path,
-				method:  method,
-				headers: headers,
-				body:    body,
-			}
-			routeHandler := router.mappings[routerKey]
-			response = routeHandler(&request)
+		request := Request{
+			path:    path,
+			method:  method,
+			headers: headers,
+			body:    body,
 		}
+		if val, ok := headers["Content-Length"]; ok && val != "0" {
+			err := request.parseBody()
+			if err != nil {
+				return []byte{}, err
+			}
+		}
+		routeHandler := router.mappings[routerKey]
+		response = routeHandler(&request)
 	}
 
 	res = response.Serialize()
@@ -94,5 +92,16 @@ func serveImage(path []byte) (response Response) {
 	} else {
 		response.Headers["Content-type"] = "image/gif"
 	}
+	return response
+}
+
+func pathNotFound() (response Response) {
+	response = Response{
+		StatusCode: 404,
+		StatusText: "NOT FOUND",
+		Headers:    make(map[string]string),
+		Body:       []byte("Path not found"),
+	}
+	response.Headers["Content-type"] = "text/html"
 	return response
 }

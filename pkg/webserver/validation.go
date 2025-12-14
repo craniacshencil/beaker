@@ -1,7 +1,6 @@
 package webserver
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -78,89 +77,4 @@ func validateMethod(method []byte) (err error) {
 		}
 	}
 	return errors.New("Invalid HTTP method")
-}
-
-func validateBody(contentType, body []byte) (err error) {
-	switch {
-	case slices.Equal(contentType, []byte("application/json")):
-		var temp struct{}
-		if err = json.Unmarshal(body, &temp); err != nil {
-			return err
-		}
-	case slices.Equal(contentType, []byte("application/x-www-form-urlencoded")):
-		if err = validateURLEncodedForm(body); err != nil {
-			return err
-		}
-		_, err = parseURLEncodedForm(body)
-		return err
-	// logic
-	case slices.Equal(contentType, []byte("multipart/form-data")):
-	// logic
-	case slices.Equal(contentType, []byte("text/plain")):
-	default:
-		return errors.New("Toy server: unsupported body type")
-	}
-	return nil
-}
-
-func validateURLEncodedForm(body []byte) (err error) {
-	ampersands := utils.ArrAllIndex(body, []byte("&"))
-	// To get the last key-val pair in
-	ampersands = append(ampersands, len(body))
-	startIndex := 0
-	for _, endIndex := range ampersands {
-		_, err := utils.PercentDecode(body[startIndex:endIndex])
-		if err != nil {
-			return err
-		}
-		startIndex = endIndex + 1
-	}
-	return nil
-}
-
-func parseURLEncodedForm(body []byte) (jsonBody []byte, err error) {
-	ampersands := utils.ArrAllIndex(body, []byte("&"))
-	// To get the last key-val pair in
-	ampersands = append(ampersands, len(body))
-	var ampersandSeparatedPairs [][]byte
-	startIndex := 0
-	for _, endIndex := range ampersands {
-		keyValue, _ := utils.PercentDecode(body[startIndex:endIndex])
-		ampersandSeparatedPairs = append(ampersandSeparatedPairs, keyValue)
-		startIndex = endIndex + 1
-	}
-
-	keyValuePairs := make(map[string]string)
-	for _, pair := range ampersandSeparatedPairs {
-		utils.Mapify(keyValuePairs, pair, []byte("="))
-	}
-
-	// Adding keys like tags[0]="a", tags[1]="b" to tags= {"a", "b"}
-	listKeys := make(map[string][]string)
-	for key, val := range keyValuePairs {
-		if idx := utils.ArrIndex([]byte(key), []byte("[")); idx != -1 {
-			listKey := key[:idx]
-			delete(keyValuePairs, key)
-			if arr, ok := listKeys[listKey]; !ok {
-				listKeys[listKey] = []string{val}
-			} else {
-				listKeys[listKey] = append(arr, val)
-			}
-		}
-	}
-
-	combinedMap := make(map[string]interface{})
-	for key, val := range keyValuePairs {
-		combinedMap[key] = val
-	}
-	for key, val := range listKeys {
-		combinedMap[key] = val
-	}
-
-	// Convert to JSON
-	jsonForm, err := json.Marshal(combinedMap)
-	if err != nil {
-		return nil, fmt.Errorf("while marshaling: %s", err.Error())
-	}
-	return jsonForm, nil
 }
