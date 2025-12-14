@@ -1,11 +1,9 @@
 package router
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/craniacshencil/beaker/utils"
@@ -67,10 +65,7 @@ func (router *Router) ServiceRequest(
 		}
 	}
 
-	res, err = formatResponse(&response)
-	if err != nil {
-		return nil, errors.New("Something went wrong while formatting the request")
-	}
+	res = response.Serialize()
 	return res, nil
 }
 
@@ -100,16 +95,4 @@ func serveImage(path []byte) (response Response) {
 		response.Headers["Content-type"] = "image/gif"
 	}
 	return response
-}
-
-func formatResponse(response *Response) (res []byte, err error) {
-	response.Headers["Content-Length"] = strconv.Itoa(len(response.Body))
-	// This isn't adding \r\n after every value
-	headers := response.marshalHeaders()
-	responseLine := []byte(
-		fmt.Sprintf("HTTP/1.1 %d %s\r\n", response.StatusCode, response.StatusText),
-	)
-	responseLineAndHeaders := append(responseLine, headers...)
-	responseLineAndHeaders = append(responseLineAndHeaders, []byte("\r\n")...)
-	return append(responseLineAndHeaders, response.Body...), nil
 }

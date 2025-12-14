@@ -15,7 +15,9 @@ import (
 )
 
 const (
-	MAX_REQUEST_SIZE = 10240
+	// 8 Kb
+	MAX_HEADER_SIZE            = 8192
+	MAX_HEADER_SIZE_EXCEED_ERR = "Header size is over 8kb"
 )
 
 type Job struct {
@@ -64,7 +66,7 @@ func CreateServer(host string, port int, workers int) *HttpServer {
 		JobQueue:  make(chan Job, 100),
 		BufPool: &sync.Pool{
 			New: func() any {
-				return make([]byte, MAX_REQUEST_SIZE)
+				return make([]byte, MAX_HEADER_SIZE)
 			},
 		},
 	}
@@ -90,6 +92,18 @@ func (httpServer *HttpServer) handleConnection(conn net.Conn, workerId int) {
 	defer conn.Close()
 
 	headersBytes, bodyReader, err := readHeaders(conn)
+	if err != nil && err.Error() == MAX_HEADER_SIZE_EXCEED_ERR {
+		errRes := router.Response{
+			StatusCode: 413,
+			StatusText: "ENTITY TOO LARGE",
+			Headers:    map[string]string{"Content-Type": "text/html"},
+			Body:       []byte(""),
+		}
+		res := errRes.Serialize()
+		conn.Write(res)
+		return
+	}
+
 	if err != nil {
 		log.Println("While reading headers: ", err)
 		return
@@ -133,6 +147,9 @@ func readHeaders(conn net.Conn) (headersBytes []byte, bodyReader io.Reader, err 
 	}
 
 	headersBytes = headersBuf.Bytes()
+	if len(headersBytes) > MAX_HEADER_SIZE {
+		return nil, nil, errors.New(MAX_HEADER_SIZE_EXCEED_ERR)
+	}
 	bodyReader = br
 	return headersBytes, bodyReader, nil
 }
