@@ -1,16 +1,36 @@
 package main
 
 import (
+	"log"
+	"os"
+	"strconv"
+
 	"github.com/craniacshencil/beaker/pkg/router"
 	"github.com/craniacshencil/beaker/pkg/webserver"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	myServer := webserver.CreateServer("127.0.0.1", 4200, 3)
+	if err := godotenv.Load(); err != nil {
+		log.Println(".env didn't load, continuing with defaults")
+	}
+	host := getenv("HOST", "localhost")
+	portString := getenv("PORT", "4200")
+	port, _ := strconv.Atoi(portString)
+
+	myServer := webserver.CreateServer(host, port, 3)
 	myServer.Webrouter.Register("GET", "/", helloWorld)
 	myServer.Webrouter.Register("GET", "/another", helloAnotherPath)
 	myServer.Webrouter.Register("POST", "/", helloPost)
 	myServer.Listen()
+}
+
+func getenv(key, fallback string) (value string) {
+	if val, ok := os.LookupEnv(key); ok {
+		log.Printf("%s: %s\n", key, val)
+		return val
+	}
+	return fallback
 }
 
 func helloWorld(request *router.Request) (response router.Response) {
